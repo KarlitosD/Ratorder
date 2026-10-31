@@ -42,7 +42,7 @@ after(async () => {
   await server?.close()
 })
 
-async function recordTone(container) {
+async function recordTone(container, trackSettings = null, expectedFormat = null) {
   const page = await browser.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
@@ -104,6 +104,23 @@ async function recordTone(container) {
       oscillator.connect(gain).connect(systemAudio)
       const capture = canvas.captureStream(30)
       capture.addTrack(systemAudio.stream.getAudioTracks()[0])
+      const audioTrack = capture.getAudioTracks()[0]
+      const isConfigSupported = AudioEncoder.isConfigSupported.bind(AudioEncoder)
+      let checkedFormat = false
+      AudioEncoder.isConfigSupported = async (config) => {
+        if (options.expectedFormat && !checkedFormat) {
+          checkedFormat = true
+          if (config.sampleRate !== options.expectedFormat.sampleRate ||
+              config.numberOfChannels !== options.expectedFormat.numberOfChannels) {
+            return { supported: false, config }
+          }
+        }
+        return isConfigSupported(config)
+      }
+      if (options.trackSettings) {
+        const getSettings = audioTrack.getSettings.bind(audioTrack)
+        audioTrack.getSettings = () => ({ ...getSettings(), ...options.trackSettings })
+      }
 
       navigator.mediaDevices.getDisplayMedia = async () => capture
       navigator.mediaDevices.getUserMedia = async () => {
@@ -147,7 +164,7 @@ async function recordTone(container) {
         capture.getTracks().forEach((track) => track.stop())
         await context.close()
       }
-    }, { container, toneFrequency, recordingDurationMs })
+    }, { container, toneFrequency, recordingDurationMs, trackSettings, expectedFormat })
 
     assert.deepEqual(errors, [], 'No browser errors during recording')
     return { file: Buffer.from(result.base64, 'base64'), metadata: result.metadata }
@@ -155,6 +172,58 @@ async function recordTone(container) {
     await page.close()
   }
 }
+
+test('requests unprocessed display audio so tab sound is not downmixed', { timeout: 15000 }, async () => {
+  const page = await browser.newPage()
+  try {
+    await page.goto(origin, { waitUntil: 'networkidle0' })
+    const audio = await page.evaluate(async () => {
+      const { RecordingController } = await import('/src/lib/recording/recording-controller.ts')
+      const { DEFAULT_PREFERENCES } = await import('/src/lib/recording/config.ts')
+
+      let requestedAudio = null
+      navigator.mediaDevices.getDisplayMedia = async (options) => {
+        requestedAudio = options.audio
+        const canvas = document.createElement('canvas')
+        canvas.width = 32
+        canvas.height = 32
+        return canvas.captureStream(30)
+      }
+
+      const recorder = new RecordingController({ store: {} })
+      try {
+        await recorder.selectSource({
+          ...DEFAULT_PREFERENCES,
+          microphoneId: 'off',
+          systemAudio: true,
+        })
+      } finally {
+        recorder.dispose()
+      }
+      return requestedAudio
+    })
+
+    assert.deepEqual(audio, {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+    })
+  } finally {
+    await page.close()
+  }
+})
+
+test('probes audio codec support with the captured track format', { timeout: 30000 }, async () => {
+  const { metadata } = await recordTone('webm', { sampleRate: 44100, channelCount: 1 },
+    { sampleRate: 44100, numberOfChannels: 1 })
+  assert.equal(metadata.hasAudio, true)
+})
+
+test('uses an explicit estimate when capture format is unavailable', { timeout: 30000 }, async () => {
+  const { metadata } = await recordTone('webm', { sampleRate: undefined, channelCount: undefined },
+    { sampleRate: 48000, numberOfChannels: 2 })
+  assert.equal(metadata.hasAudio, true)
+})
 
 function analyzeTone(file) {
   const bytes = execFileSync('ffmpeg', [

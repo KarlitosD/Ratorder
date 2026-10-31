@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RATORDER-REF</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+      }
+      video {
+        width: 100vw;
+        height: 100vh;
+        object-fit: contain;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <video id="reference" src="./ratorder-referencia-av.mp4" playsinline></video>
+    <script>
+      const video = document.getElementById('reference')
+      video.muted = false
+      video.volume = 0.03
+      const play = () => {
+        video.currentTime = 0
+        video.play().catch((error) => {
+          document.title = 'RATORDER-REF-ERROR'
+          console.error(error)
+        })
+      }
+      if (document.readyState === 'complete') play()
+      else window.addEventListener('load', play, { once: true })
+      window.__reference = video
+    </script>
+  </body>
+</html>

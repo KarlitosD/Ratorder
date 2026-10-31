@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { font-family: var(--font-sans); color: var(--foreground); }
+body { margin: 0; }
+#color-probe h3 { font-weight: 500; margin: 0 0 12px; }
+#color-probe .unit { color: var(--muted-foreground); margin: 0 0 18px; }
+#color-probe .row { display: grid; grid-template-columns: minmax(122px, 1fr) minmax(105px, 2fr) 48px; gap: 12px; align-items: center; margin: 14px 0; }
+#color-probe .plot { height: 18px; background: var(--muted); }
+#color-probe .bar { height: 18px; background: var(--chart-1); }
+#color-probe .value { font-variant-numeric: tabular-nums; text-align: right; }
+#color-probe .axis { display: flex; justify-content: space-between; color: var(--muted-foreground); }
+#color-probe .note { color: var(--muted-foreground); margin: 16px 0 0; }
+</style>
+</head>
+<body>
+<section id="color-probe" aria-labelledby="color-heading">
+<h3 id="color-heading">Conversión de video: diferencia medida</h3>
+<p class="unit">Error RGB medio · niveles de 0 a 255 · menor es mejor</p>
+<div role="img" aria-label="Prueba de 16 parches SDR a 720p. Error medio actual: Chromium 0,417 y Vivaldi 0,688. Ruta experimental sin Canvas: 0 en ambos. Solo mide el centro de los parches, no todos los píxeles del video.">
+  <div class="row"><span>Chromium · actual</span><div class="plot"><div class="bar" style="width:41.6667%"></div></div><span class="value">0,417</span></div>
+  <div class="row"><span>Chromium · sin Canvas</span><div class="plot"></div><span class="value">0</span></div>
+  <div class="row"><span>Vivaldi · actual</span><div class="plot"><div class="bar" style="width:68.75%"></div></div><span class="value">0,688</span></div>
+  <div class="row"><span>Vivaldi · sin Canvas</span><div class="plot"></div><span class="value">0</span></div>
+  <div class="row"><span></span><div class="axis"><span>0</span><span>0,5</span><span>1</span></div><span></span></div>
+</div>
+<p class="note">Prueba sintética SDR · 16 parches planos · 720p. Diferencias pequeñas; no demuestra la causa de tu captura real ni ausencia de pérdidas en todo el video.</p>
+</section>
+</body>
+</html>

@@ -18,6 +18,7 @@ import type {
   RecordingPreferences,
 } from '../types'
 import { OpfsStreamWriter } from '../storage/opfs-stream-writer'
+import { holdRecordingLock } from '../storage/recording-lock'
 import type { RecordingStore } from '../storage/recording-store'
 import { AudioMixer } from './audio-mixer'
 import {
@@ -35,6 +36,7 @@ interface RecordingControllerDeps {
 }
 
 interface ActiveSession {
+  releaseLock: () => void
   id: string
   metadata: RecordingMetadata
   output: Output
@@ -51,6 +53,16 @@ interface ActiveSession {
   lastReportedSecond: number
   stopping: boolean
   autoStopped: boolean
+}
+
+// Chrome enables echo cancellation, noise suppression and AGC for display
+// audio by default, which also downmixes tab audio to mono. Disabling them
+// keeps tab audio unprocessed (usually stereo). These are ideals, so browsers
+// that cannot honor them still capture audio.
+const DISPLAY_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: false,
+  noiseSuppression: false,
+  autoGainControl: false,
 }
 
 const INITIAL_SNAPSHOT: RecorderSnapshot = {
@@ -117,7 +129,7 @@ export class RecordingController {
         video: {
           frameRate: { ideal: preferences.fps, max: 60 },
         },
-        audio: preferences.systemAudio,
+        audio: preferences.systemAudio ? DISPLAY_AUDIO_CONSTRAINTS : false,
         selfBrowserSurface: 'exclude',
         surfaceSwitching: 'include',
         systemAudio: preferences.systemAudio ? 'include' : 'exclude',
@@ -191,6 +203,7 @@ export class RecordingController {
     let videoSource: MediaStreamVideoTrackSource | null = null
     let audioSource: MediaStreamAudioTrackSource | null = null
     let recordingMetadata: RecordingMetadata | null = null
+    let releaseLock: (() => void) | null = null
 
     try {
       if (preferences.microphoneId !== 'off') {
@@ -294,6 +307,7 @@ export class RecordingController {
         audioCodec = await this.#chooseAudioCodec(
           container,
           preferences.audioBitrate,
+          audioInputTrack,
         )
         if (!audioCodec) {
           await mixer?.close()
@@ -319,11 +333,15 @@ export class RecordingController {
           }),
           keyFrameInterval: 2,
           sizeChangeBehavior: 'contain',
-          transform: {
-            width: dimensions.width,
-            height: dimensions.height,
-            fit: 'contain',
-          },
+          ...(dimensions.width !== sourceWidth || dimensions.height !== sourceHeight
+            ? {
+                transform: {
+                  width: dimensions.width,
+                  height: dimensions.height,
+                  fit: 'contain' as const,
+                },
+              }
+            : {}),
         },
         { frameRate: preferences.fps, timestampBase: 'synced-zero' },
       )
@@ -342,6 +360,7 @@ export class RecordingController {
       }
 
       const recordingId = crypto.randomUUID()
+      releaseLock = await holdRecordingLock(recordingId)
       const now = new Date()
       const metadata = this.#createMetadata(
         recordingId,
@@ -394,6 +413,7 @@ export class RecordingController {
 
       const startedAt = performance.now()
       const session: ActiveSession = {
+        releaseLock,
         id: recordingId,
         metadata,
         output,
@@ -426,6 +446,30 @@ export class RecordingController {
         outputWidth: dimensions.width,
         outputHeight: dimensions.height,
       })
+
+      const audioStreams = [
+        [systemAudioStream, 'system'],
+        [microphoneStream, 'microphone'],
+      ] as const
+      for (const [stream, kind] of audioStreams) {
+        const track = stream?.getAudioTracks()[0]
+        if (!track) continue
+        const onEnded = () => {
+          if (this.#session !== session || session.stopping) return
+          const patch = kind === 'system'
+            ? { systemAudioActive: false, hasAudio: this.#snapshot.microphoneActive }
+            : { microphoneActive: false, hasAudio: this.#snapshot.systemAudioActive }
+          this.#emit(patch)
+          this.#notify(
+            kind === 'system'
+              ? 'Se perdió el audio del sistema durante la grabación.'
+              : 'Se perdió el micrófono durante la grabación.',
+            'warning',
+          )
+        }
+        track.addEventListener('ended', onEnded, { once: true })
+        if (track.readyState === 'ended') onEnded()
+      }
 
       if (audioCodec === 'opus' && container === 'mp4') {
         this.#notify(
@@ -464,6 +508,7 @@ export class RecordingController {
             .catch(() => undefined)
         }
       }
+      releaseLock?.()
 
       const message = this.#describeError(
         error,
@@ -535,6 +580,7 @@ export class RecordingController {
       void session.output.cancel().catch(() => undefined)
       void session.writer.abort()
       void session.mixer?.close()
+      session.releaseLock()
     }
     this.#session = null
     this.#listeners.clear()
@@ -631,6 +677,7 @@ export class RecordingController {
       this.#deps.onRecordingFinished?.(session.metadata)
       this.#notify(message, 'error')
     } finally {
+      session.releaseLock()
       this.#session = null
       this.#stopTicker(session)
       session.audioSource?.pause()
@@ -763,6 +810,7 @@ export class RecordingController {
       note: 'La grabación se interrumpió por un error. Se conserva el contenido escrito en disco.',
     }
     await this.#deps.store.saveMetadata(session.metadata).catch(() => undefined)
+    session.releaseLock()
     this.#session = null
     await session.mixer?.close().catch(() => undefined)
     session.audioSource?.pause()
@@ -858,12 +906,16 @@ export class RecordingController {
   async #chooseAudioCodec(
     container: 'mp4' | 'webm',
     bitrate: number,
+    track: MediaStreamTrack,
   ): Promise<AudioCodec | null> {
     const candidates: AudioCodec[] =
       container === 'mp4' ? ['aac', 'opus'] : ['opus']
+    // Some capture tracks omit these settings; they are hints, not guarantees
+    // about the format of the first AudioData delivered by the browser.
+    const settings = track.getSettings()
     return getFirstEncodableAudioCodec(candidates, {
-      numberOfChannels: 2,
-      sampleRate: 48_000,
+      numberOfChannels: settings.channelCount || 2,
+      sampleRate: settings.sampleRate || 48_000,
       quality: new Quality({ bitrate }),
     })
   }

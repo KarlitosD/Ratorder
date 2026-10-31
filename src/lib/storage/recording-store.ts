@@ -1,4 +1,5 @@
 import type { RecordingMetadata } from '../types'
+import { isRecordingActive } from './recording-lock'
 
 const ROOT_DIRECTORY = 'recordings'
 const METADATA_FILE = 'metadata.json'
@@ -191,6 +192,10 @@ export class RecordingStore {
 
     const now = new Date().toISOString()
     let changed = false
+
+    if (metadata.status === 'recording' && await isRecordingActive(folderName)) {
+      return metadata
+    }
 
     if (metadata.status === 'recording') {
       metadata.status = 'interrupted'

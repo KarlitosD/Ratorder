@@ -40,7 +40,7 @@ Otros comandos:
 npm run check    # comprobación de tipos y Svelte
 npm run build    # compilación de producción + service worker
 npm run preview  # sirve la compilación de producción
-npm test         # regresión de audio con Chromium y ffmpeg instalados
+npm test         # regresiones de audio y sincronización con Chromium, ffmpeg y ffprobe
 ```
 
 Las pruebas generan un tono conocido, lo graban con el controlador real y analizan
@@ -49,6 +49,50 @@ Reproducen variaciones controladas de los timestamps de captura para que la
 regresión no dependa de la carga del equipo. No requieren permisos ni
 usan tus grabaciones. Si Chromium no está en una ruta habitual de Linux, indicá
 su ejecutable con `CHROMIUM_PATH=/ruta/al/navegador npm test`.
+
+La prueba de sincronización genera destellos y pulsos sintéticos, graba con el
+controlador real y mide desfase inicial y deriva en el archivo, incluyendo pausa
+y carga simulada del hilo principal. El resultado es aproximado: está limitado
+por los 30 fps del video, la detección de pulsos y el entorno de prueba; no
+sustituye una captura real de pantalla y sonido del sistema.
+
+Para inspeccionar un archivo guardado sin subirlo a ningún servicio:
+
+```bash
+node scripts/inspect-recording.mjs /ruta/a/grabacion.mp4
+```
+
+El informe usa `ffprobe` y muestra pistas, códecs, resolución, frecuencia,
+canales, timestamps iniciales y cantidad de paquetes. No calcula frames perdidos
+ni demuestra sincronización. Cuenta los paquetes leyendo el archivo completo,
+por lo que puede tardar en grabaciones largas.
+
+La evaluación experimental de AAC por WASM no modifica el encoder de la app.
+Para ejecutarla localmente, instalá el paquete sin guardarlo en el proyecto y
+habilitá la prueba opcional:
+
+```bash
+npm install --no-save --package-lock=false @mediabunny/aac-encoder@1.65.0
+AAC_WASM_BENCH=1 node --test --test-name-pattern='experimental AAC' tests/recording-sync.test.mjs
+```
+
+Por defecto, la prueba usa un video sintético pequeño con pausas y presión
+artificial del hilo principal; no valida grabaciones largas o de alta resolución.
+El paquete se elimina al reinstalar las dependencias desde el lockfile.
+Se pueden ampliar sus parámetros, por ejemplo:
+
+```bash
+AAC_WASM_BENCH=1 AAC_WASM_EVENTS=60 AAC_WASM_WIDTH=1920 AAC_WASM_HEIGHT=1080 \
+  node --test --test-name-pattern='experimental AAC' tests/recording-sync.test.mjs
+```
+
+En Linux informa CPU y memoria aproximadas del árbol de procesos del navegador.
+Incluyen video, renderizado y la carga artificial, no solo el encoder AAC; la
+memoria suma RSS y puede contar páginas compartidas más de una vez. Los procesos
+que nacen y terminan entre muestras pueden quedar excluidos. El video es un
+canvas de colores planos, no representa la complejidad de un escritorio real.
+Si el análisis de una prueba sintética falla, `AAC_KEEP_FAILED=1` conserva
+temporalmente el archivo generado en `/tmp` e imprime su ruta para investigarlo.
 
 La grabación necesita permisos de captura de pantalla y de micrófono. El navegador solo concede permisos en un contexto seguro.
 
