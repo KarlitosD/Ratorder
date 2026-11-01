@@ -1,3 +1,4 @@
+import { trackResource } from '../diagnostics/resources'
 import type { StreamTargetChunk } from 'mediabunny'
 import type {
   WriterRequest,
@@ -16,6 +17,7 @@ export class OpfsStreamWriter {
   readonly extension: 'mp4' | 'webm'
 
   #worker: Worker
+  #releaseWorker: () => void
   #pending = new Map<number, PendingRequest>()
   #nextRequestId = 1
   #bytesWritten = 0
@@ -36,6 +38,7 @@ export class OpfsStreamWriter {
       new URL('./opfs-writer.worker.ts', import.meta.url),
       { type: 'module' },
     )
+    this.#releaseWorker = trackResource('writer')
     this.#worker.addEventListener('message', this.#handleMessage)
     this.#worker.addEventListener('error', this.#handleWorkerError)
     this.#ready = this.#request({
@@ -53,8 +56,13 @@ export class OpfsStreamWriter {
     onFatal?: (error: Error) => void,
   ): Promise<OpfsStreamWriter> {
     const writer = new OpfsStreamWriter(recordingId, extension, onFatal)
-    await writer.#ready
-    return writer
+    try {
+      await writer.#ready
+      return writer
+    } catch (error) {
+      writer.#terminateWorker()
+      throw error
+    }
   }
 
   get bytesWritten(): number {
@@ -116,7 +124,7 @@ export class OpfsStreamWriter {
     if (this.#closed) return this.#bytesWritten
     this.#closed = true
     if (this.#fatalError) {
-      this.#worker.terminate()
+      this.#terminateWorker()
       return this.#bytesWritten
     }
     try {
@@ -127,7 +135,7 @@ export class OpfsStreamWriter {
       )
       return this.#bytesWritten
     } finally {
-      this.#worker.terminate()
+      this.#terminateWorker()
     }
   }
 
@@ -141,8 +149,13 @@ export class OpfsStreamWriter {
     } catch {
       // Preserve whatever bytes reached the disk.
     } finally {
-      this.#worker.terminate()
+      this.#terminateWorker()
     }
+  }
+
+  #terminateWorker() {
+    this.#worker.terminate()
+    this.#releaseWorker()
   }
 
   #handleMessage = (event: MessageEvent<WriterResponse>) => {

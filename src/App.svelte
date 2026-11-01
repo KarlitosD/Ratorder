@@ -5,6 +5,8 @@
   import LibraryView from './lib/components/LibraryView.svelte'
   import RecordView from './lib/components/RecordView.svelte'
   import Toast from './lib/components/Toast.svelte'
+  import DiagnosticsPanel from './lib/components/DiagnosticsPanel.svelte'
+  import { inspectAfterRecording } from './lib/diagnostics/reporting'
   import {
     getBrowserCapabilities,
     loadPreferences,
@@ -56,6 +58,12 @@
     onRecordingFinished: () => {
       void refreshLibrary()
       window.setTimeout(() => void updateStorageUsage(), 300)
+    },
+    onRecordingCleanup: () => {
+      if (['preparing', 'recording', 'paused', 'finalizing'].includes(snapshot.phase)) return
+      if (inspectAfterRecording()) {
+        showToast('Diagnóstico: un recurso de grabación sigue activo. Consulta el informe local.', 'warning')
+      }
     },
   })
 
@@ -287,6 +295,7 @@
         onNotify={showToast}
       />
     {/if}
+    <DiagnosticsPanel />
   </main>
 </div>
 

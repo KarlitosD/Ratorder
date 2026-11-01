@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { createDiagnosticUrl, revokeDiagnosticUrl } from '../diagnostics/resources'
   import { onDestroy } from 'svelte'
   import {
     AlertTriangle,
@@ -97,18 +98,23 @@
       id: recording.id,
       hasThumbnail: Boolean(recording.thumbnail),
     }))
-    void syncThumbnails(target)
+    let cancelled = false
+    void syncThumbnails(target, () => cancelled)
+    return () => {
+      cancelled = true
+    }
   })
 
   onDestroy(() => {
     for (const url of activeThumbnailUrls.values()) {
-      URL.revokeObjectURL(url)
+      revokeDiagnosticUrl(url)
     }
     activeThumbnailUrls.clear()
   })
 
   async function syncThumbnails(
     target: Array<{ id: string; hasThumbnail: boolean }>,
+    isCancelled: () => boolean,
   ) {
     const wanted = new Set(
       target.filter((item) => item.hasThumbnail).map((item) => item.id),
@@ -116,7 +122,7 @@
 
     for (const [id, url] of Array.from(activeThumbnailUrls.entries())) {
       if (wanted.has(id)) continue
-      URL.revokeObjectURL(url)
+      revokeDiagnosticUrl(url)
       activeThumbnailUrls.delete(id)
       const next = { ...thumbnailUrls }
       delete next[id]
@@ -127,8 +133,9 @@
       if (!item.hasThumbnail || activeThumbnailUrls.has(item.id)) continue
       try {
         const file = await onGetThumbnail(item.id)
+        if (isCancelled()) return
         if (!file) continue
-        const url = URL.createObjectURL(file)
+        const url = createDiagnosticUrl(file, 'thumbnailUrl')
         activeThumbnailUrls.set(item.id, url)
         thumbnailUrls = { ...thumbnailUrls, [item.id]: url }
       } catch {

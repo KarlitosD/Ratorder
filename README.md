@@ -1,6 +1,6 @@
 # Ratorder
 
-Grabador de pantalla local para navegadores Chromium. Graba pestañas, ventanas o la pantalla completa, mezcla micrófono y audio del sistema, y escribe el archivo progresivamente en el dispositivo. No hay cuentas, servidores ni telemetría.
+Grabador de pantalla local para navegadores Chromium. Graba pestañas, ventanas o la pantalla completa, mezcla micrófono y audio del sistema, y escribe el archivo progresivamente en el dispositivo. No hay cuentas ni servidor propio; el diagnóstico externo es opcional y está desactivado por defecto.
 
 ## Características
 
@@ -159,7 +159,7 @@ src/
 
 ## Decisiones y límites actuales
 
-- No hay backend, cuentas ni sincronización.
+- No hay backend propio, cuentas ni sincronización. La telemetría opcional usa un servicio externo si se configura y el usuario la habilita.
 - No se incluye edición de video todavía.
 - La compatibilidad de un MP4 interrumpido depende de los fragmentos que hayan llegado a disco. Ratorder detecta y conserva la sesión, pero no promete reparar cualquier archivo dañado a nivel de contenedor.
 - En navegadores sin codificador AAC se usa Opus dentro de MP4; algunos reproductores de escritorio podrían requerir códecs adicionales.
@@ -168,4 +168,25 @@ src/
 
 ## Privacidad
 
-Ratorder no envía grabaciones, metadatos ni eventos a ningún servidor. Todo el procesamiento multimedia ocurre en el navegador y el resultado se queda en OPFS hasta que se exporta o se elimina.
+El procesamiento multimedia ocurre en el navegador y el resultado permanece en OPFS hasta que se exporta o elimina. Por defecto, Ratorder no envía eventos de diagnóstico. El envío a PostHog requiere que quien despliega la app lo configure y que cada usuario lo active explícitamente; se puede desactivar en cualquier momento desde **Diagnóstico**. La preferencia se guarda en el almacenamiento local del navegador.
+
+## Diagnóstico de recursos
+
+La sección **Diagnóstico** permite ver y copiar un informe local de la sesión actual. Incluye la versión, contadores de workers de escritura, contextos y pistas de audio mezclado, URL temporales por uso y hasta diez sospechas de recursos no liberados en esta sesión. Las URL temporales pueden estar activas legítimamente mientras se muestra la biblioteca o un video, y durante un minuto tras una descarga. Los contadores no inspeccionan todos los recursos internos del navegador ni detectan todas las fugas. El informe no contiene nombres ni contenido de grabaciones.
+
+Después de completar la limpieza de una grabación, si no comenzó otra y sigue habiendo un worker de escritura, contexto de audio o pista mezclada activo, se muestra una advertencia. Es una **sospecha**, no una confirmación de fuga. El informe también intenta obtener una muestra de memoria con `measureUserAgentSpecificMemory` si el navegador la ofrece y la página está aislada entre orígenes. Se guardan en memoria hasta diez muestras locales obtenidas al terminar la limpieza o solicitar el informe; permiten observar una tendencia pero no demuestran una fuga. `null` significa que no pudo medirse. Ratorder no configura por sí mismo el aislamiento COOP/COEP: depende del servidor de alojamiento y puede afectar a recursos externos.
+
+### Configurar envío opcional a PostHog
+
+1. Crear un proyecto gratuito en [PostHog](https://posthog.com/pricing) y obtener su **project token público**, no una clave personal.
+2. Al compilar o iniciar Vite, definir `VITE_POSTHOG_TOKEN` y, opcionalmente, `VITE_POSTHOG_REGION=eu` (por defecto `us`). Por ejemplo, en un archivo `.env.local` no incluido en Git:
+
+   ```text
+   VITE_POSTHOG_TOKEN=phc_token_publico_del_proyecto
+   VITE_POSTHOG_REGION=eu
+   ```
+
+3. Volver a compilar y desplegar. Sin token, el envío permanece deshabilitado. Cada usuario debe habilitarlo en **Diagnóstico**.
+4. En PostHog, consultar el evento `diagnostic_resource_suspected` y configurar allí una alerta si se desea; Ratorder no configura alertas automáticamente. El límite y disponibilidad de las alertas dependen del plan de PostHog.
+
+Como máximo se intenta enviar una sospecha por carga de página, solo si el consentimiento está activo en el momento de detectarla. El evento contiene el tipo de sospecha, la cantidad, la versión, la operación y un identificador aleatorio nuevo para ese evento; no contiene grabaciones, audio, miniaturas, títulos, URL de la página ni informe de memoria. No se utiliza el SDK de PostHog, autocaptura ni reproducción de sesión. La solicitud va directamente a PostHog, que puede recibir la dirección IP y datos habituales de conexión; revisá su política y la configuración de captura de IP del proyecto. No se reintenta si falla y desactivar el permiso impide envíos posteriores, pero no borra eventos ya recibidos. El token público queda incluido en la compilación y no debe tratarse como secreto.

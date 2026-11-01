@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { createDiagnosticUrl, revokeDiagnosticUrl } from '../diagnostics/resources'
   import { onMount, tick, untrack } from 'svelte'
   import {
     AlertTriangle,
@@ -149,7 +150,7 @@
       dialogElement?.close()
       videoElement?.pause()
       if (activeObjectUrl) {
-        URL.revokeObjectURL(activeObjectUrl)
+        revokeDiagnosticUrl(activeObjectUrl)
         activeObjectUrl = null
       }
       previouslyFocused?.focus?.()
@@ -170,7 +171,7 @@
     try {
       const file = await onGetFile(recording)
       if (disposed) return
-      const url = URL.createObjectURL(file)
+      const url = createDiagnosticUrl(file, 'playbackUrl')
       activeObjectUrl = url
       videoUrl = url
     } catch (error) {
@@ -319,14 +320,14 @@
         }
       } else {
         const file = await onGetFile(currentRecording)
-        const url = URL.createObjectURL(file)
+        const url = createDiagnosticUrl(file, 'downloadUrl')
         const link = document.createElement('a')
         link.href = url
         link.download = suggestedName
         document.body.appendChild(link)
         link.click()
         link.remove()
-        window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+        window.setTimeout(() => revokeDiagnosticUrl(url), 60_000)
         onNotify('Descarga iniciada. El archivo se guardará fuera de OPFS.', 'success')
       }
     } catch (error) {

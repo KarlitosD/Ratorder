@@ -33,6 +33,7 @@ interface RecordingControllerDeps {
   store: RecordingStore
   onNotice?: (message: string, kind: NoticeKind) => void
   onRecordingFinished?: (recording: RecordingMetadata) => void
+  onRecordingCleanup?: () => void
 }
 
 interface ActiveSession {
@@ -519,6 +520,7 @@ export class RecordingController {
       if (interruptedMetadata) {
         this.#deps.onRecordingFinished?.(interruptedMetadata)
       }
+      this.#deps.onRecordingCleanup?.()
     }
   }
 
@@ -689,6 +691,7 @@ export class RecordingController {
       session.systemAudioStream?.getTracks().forEach((track) => track.stop())
       this.#releaseSource()
       this.#emit({ source: null, previewStream: null })
+      this.#deps.onRecordingCleanup?.()
     }
   }
 
@@ -833,6 +836,7 @@ export class RecordingController {
       activeRecordingId: null,
     })
     this.#deps.onRecordingFinished?.(session.metadata)
+    this.#deps.onRecordingCleanup?.()
   }
 
   async #cleanFailedStart(parts: {

@@ -1,3 +1,5 @@
+import { trackResource } from '../diagnostics/resources'
+
 interface AudioMixerOptions {
   microphoneStream: MediaStream | null
   systemAudioStream: MediaStream | null
@@ -12,6 +14,8 @@ export class AudioMixer {
   #systemAudioGain: GainNode | null = null
   #sourceNodes: AudioNode[] = []
   #closed = false
+  #releaseContext: () => void
+  #releaseTrack: () => void
 
   private constructor(
     context: AudioContext,
@@ -24,6 +28,8 @@ export class AudioMixer {
       throw new Error('No se pudo crear la pista de audio mezclada.')
     }
     this.track = track
+    this.#releaseContext = trackResource('audioContext')
+    this.#releaseTrack = trackResource('mixedTrack')
   }
 
   static async create({
@@ -118,7 +124,13 @@ export class AudioMixer {
     }
     this.#sourceNodes = []
     this.stream.getTracks().forEach((track) => track.stop())
-    await this.#context.close().catch(() => undefined)
+    this.#releaseTrack()
+    try {
+      await this.#context.close()
+      this.#releaseContext()
+    } catch {
+      // Keep the context counted if the browser could not close it.
+    }
   }
 
   #setGain(node: GainNode | null, value: number) {
