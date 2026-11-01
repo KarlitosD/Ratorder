@@ -40,7 +40,7 @@
 </section>
 
 <style>
-  .diagnostics { margin-top: 24px; padding: 18px; border: 1px solid var(--border); border-radius: 12px; }
+  .diagnostics { margin-top: 12px; padding: 18px; border: 1px solid var(--border); border-radius: 12px; }
   h2 { font-size: 14px; margin: 0 0 8px; }
   p { font-size: 12px; line-height: 1.5; color: var(--text-secondary); margin: 8px 0; }
   button { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }

@@ -84,3 +84,18 @@ test('releases thumbnail URLs after repeatedly opening and closing the library',
     assert.equal(result.final, result.baseline)
   } finally { await page.close() }
 })
+
+test('keeps diagnostics inside advanced recording settings', async () => {
+  const page = await browser.newPage()
+  try {
+    await page.goto(origin)
+    assert.equal(await page.$('summary::-p-text(Diagnóstico)'), null)
+    await page.locator('button::-p-text(Opciones avanzadas)').click()
+    const summary = await page.$('summary::-p-text(Diagnóstico)')
+    assert.ok(summary)
+    assert.equal(await page.$eval('details.diagnostics-disclosure', el => el.open), false)
+    await summary.click()
+    assert.equal(await page.$eval('details.diagnostics-disclosure', el => el.open), true)
+    assert.ok(await page.$('button::-p-text(Ver informe local)'))
+  } finally { await page.close() }
+})

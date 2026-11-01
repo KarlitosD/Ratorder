@@ -17,6 +17,7 @@
   } from '../recording/config'
   import { formatBitrate, formatResolution } from '../utils/format'
   import SelectField from './SelectField.svelte'
+  import DiagnosticsPanel from './DiagnosticsPanel.svelte'
 
   interface Props {
     preferences: RecordingPreferences
@@ -332,6 +333,12 @@
               ? 'La escritura es progresiva. Los fragmentos permiten recuperar el contenido si la sesión se interrumpe.'
               : 'La escritura es progresiva. El contenido ya escrito se conserva aunque la sesión se interrumpa.'}
           </p>
+          {#if advancedOpen}
+            <details class="diagnostics-disclosure">
+              <summary>Diagnóstico</summary>
+              <DiagnosticsPanel />
+            </details>
+          {/if}
         </div>
       </div>
     </section>
@@ -661,6 +668,17 @@
     color: var(--text-tertiary);
     font-size: 10.5px;
     line-height: 1.5;
+  }
+
+  .diagnostics-disclosure {
+    padding-bottom: 18px;
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+
+  .diagnostics-disclosure summary {
+    width: fit-content;
+    cursor: pointer;
   }
 
   @media (max-width: 1040px) {
