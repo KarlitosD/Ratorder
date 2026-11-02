@@ -76,8 +76,8 @@
       </button>
       <button
         type="button"
-        class:active={view === 'library'}
-        aria-current={view === 'library' ? 'page' : undefined}
+        class:active={view === 'library' || view === 'editor'}
+        aria-current={view === 'library' || view === 'editor' ? 'page' : undefined}
         onclick={() => onNavigate('library')}
       >
         <span>Biblioteca</span>

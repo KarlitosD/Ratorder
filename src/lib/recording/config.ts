@@ -133,6 +133,16 @@ export function computeVideoBitrate(
   )
 }
 
+export function inferQualityPreset(
+  width: number,
+  height: number,
+): QualityPreset {
+  const longEdge = Math.max(width || 0, height || 0)
+  if (longEdge <= QUALITY_PRESETS.balanced.maxLongEdge) return 'balanced'
+  if (longEdge <= QUALITY_PRESETS.high.maxLongEdge) return 'high'
+  return 'maximum'
+}
+
 function makeEven(value: number): number {
   return Math.max(2, Math.round(value / 2) * 2)
 }

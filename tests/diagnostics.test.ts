@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
-import { after, before, test } from 'node:test'
+import { afterAll, beforeAll, test } from 'vitest'
 import { createServer } from 'vite'
 
-let server, diagnostics
-before(async () => {
+let server: any, diagnostics: any
+beforeAll(async () => {
   server = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom' })
   diagnostics = await server.ssrLoadModule('/src/lib/diagnostics/resources.ts')
 })
-after(async () => { await server?.close() })
+afterAll(async () => { await server?.close() })
 
 test('tracks resources idempotently without retaining their objects', () => {
   const release = diagnostics.trackResource('writer')
@@ -45,8 +45,8 @@ test('does not transmit diagnostic issues without explicit consent', async () =>
 test('returns tracked resources to baseline across repeated lifecycles', () => {
   const baseline = diagnostics.getResourceCounts()
   for (let i = 0; i < 100; i++) {
-    const releases = ['writer', 'audioContext', 'mixedTrack', 'thumbnailUrl', 'playbackUrl', 'downloadUrl'].map(diagnostics.trackResource)
-    for (const release of releases) release()
+    const releases = ['writer', 'audioContext', 'mixedTrack', 'thumbnailUrl', 'playbackUrl', 'downloadUrl'].map((k: any) => diagnostics.trackResource(k))
+    for (const release of releases) (release as any)()
   }
   assert.deepEqual(diagnostics.getResourceCounts(), baseline)
 })
@@ -54,9 +54,9 @@ test('returns tracked resources to baseline across repeated lifecycles', () => {
 test('keeps only ten local observations and reports memory samples when available', async () => {
   const reporting = await server.ssrLoadModule('/src/lib/diagnostics/reporting.ts')
   const previousWindow = globalThis.window
-  const previousMemory = performance.measureUserAgentSpecificMemory
-  globalThis.window = { crossOriginIsolated: true }
-  performance.measureUserAgentSpecificMemory = async () => ({ bytes: 1234 })
+  const previousMemory = (performance as any).measureUserAgentSpecificMemory
+  globalThis.window = { crossOriginIsolated: true } as any
+  (performance as any).measureUserAgentSpecificMemory = async () => ({ bytes: 1234 })
   const release = diagnostics.trackResource('writer')
   try {
     for (let i = 0; i < 12; i++) reporting.inspectAfterRecording()
@@ -66,9 +66,9 @@ test('keeps only ten local observations and reports memory samples when availabl
     assert.equal(report.memorySamples.length, 10)
   } finally {
     release()
-    if (previousWindow === undefined) delete globalThis.window
+    if (previousWindow === undefined) delete (globalThis as any).window
     else globalThis.window = previousWindow
-    if (previousMemory === undefined) delete performance.measureUserAgentSpecificMemory
-    else performance.measureUserAgentSpecificMemory = previousMemory
+    if (previousMemory === undefined) delete (performance as any).measureUserAgentSpecificMemory
+    else (performance as any).measureUserAgentSpecificMemory = previousMemory
   }
 })

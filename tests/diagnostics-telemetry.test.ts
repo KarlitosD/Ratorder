@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
-import { after, before, test } from 'node:test'
+import { afterAll, beforeAll, test } from 'vitest'
 import { createServer } from 'vite'
 
-let server, reporting, resources
+let server: any, reporting: any, resources: any
 let originalFetch, originalStorage
 const calls = []
 const values = new Map()
 
-before(async () => {
+beforeAll(async () => {
   process.env.VITE_POSTHOG_TOKEN = 'test-public-token'
   process.env.VITE_POSTHOG_REGION = 'eu'
   originalFetch = globalThis.fetch
@@ -16,13 +16,13 @@ before(async () => {
     getItem: key => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, value),
     removeItem: key => values.delete(key),
-  }
+  } as any
   globalThis.fetch = async (...args) => { calls.push(args); return new Response() }
   server = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom' })
   reporting = await server.ssrLoadModule('/src/lib/diagnostics/reporting.ts')
   resources = await server.ssrLoadModule('/src/lib/diagnostics/resources.ts')
 })
-after(async () => {
+afterAll(async () => {
   await server?.close()
   globalThis.fetch = originalFetch
   if (originalStorage === undefined) delete globalThis.localStorage

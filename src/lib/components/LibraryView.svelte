@@ -6,6 +6,7 @@
     ArrowDownWideNarrow,
     Calendar,
     Play,
+    Scissors,
     Search,
     Volume2,
     X,
@@ -34,6 +35,7 @@
       title: string,
     ) => Promise<RecordingMetadata>
     onNewRecording: () => void
+    onEdit: (recording: RecordingMetadata) => void
     onNotify: (message: string, kind: 'info' | 'success' | 'warning' | 'error') => void
   }
 
@@ -47,6 +49,7 @@
     onDelete,
     onRename,
     onNewRecording,
+    onEdit,
     onNotify,
   }: Props = $props()
 
@@ -63,6 +66,8 @@
   let sort = $state<SortMode>('recent')
   let selected = $state<RecordingMetadata | null>(null)
   let thumbnailUrls = $state<Record<string, string>>({})
+  let visibleIds = $state<Set<string>>(new Set())
+  let gridEl = $state<HTMLElement | null>(null)
   const activeThumbnailUrls = new Map<string, string>()
 
   let totalSize = $derived(
@@ -94,15 +99,65 @@
   })
 
   $effect(() => {
-    const target = recordings.map((recording) => ({
-      id: recording.id,
-      hasThumbnail: Boolean(recording.thumbnail),
-    }))
+    // Solo se piden miniaturas de tarjetas visibles (más la seleccionada);
+    // las URLs ya cargadas se conservan aunque salgan del viewport.
+    const visible = visibleIds
+    const sel = selected?.id
+    const filtered = filteredRecordings
+    const target = filtered
+      .filter((recording) => {
+        if (!recording.thumbnail) return false
+        if (visible.size === 0) return true
+        return visible.has(recording.id) || recording.id === sel
+      })
+      .slice(0, visible.size === 0 ? 12 : filtered.length)
+      .map((recording) => ({
+        id: recording.id,
+        hasThumbnail: Boolean(recording.thumbnail),
+      }))
+    // La seleccionada siempre se asegura aunque esté fuera de pantalla.
+    if (sel && !target.some((item) => item.id === sel)) {
+      const found = filtered.find((recording) => recording.id === sel)
+      if (found?.thumbnail) {
+        target.push({ id: found.id, hasThumbnail: true })
+      }
+    }
     let cancelled = false
     void syncThumbnails(target, () => cancelled)
     return () => {
       cancelled = true
     }
+  })
+
+  $effect(() => {
+    const grid = gridEl
+    if (!grid) return
+    if (typeof IntersectionObserver === 'undefined') {
+      visibleIds = new Set(recordings.map((recording) => recording.id))
+      return
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let changed = false
+        const next = new Set(visibleIds)
+        for (const entry of entries) {
+          const id = (entry.target as HTMLElement).dataset.id
+          if (!id) continue
+          if (entry.isIntersecting) {
+            if (!next.has(id)) {
+              next.add(id)
+              changed = true
+            }
+          }
+        }
+        if (changed) visibleIds = next
+      },
+      { rootMargin: '200px' },
+    )
+    for (const card of grid.querySelectorAll('[data-id]')) {
+      observer.observe(card)
+    }
+    return () => observer.disconnect()
   })
 
   onDestroy(() => {
@@ -119,9 +174,11 @@
     const wanted = new Set(
       target.filter((item) => item.hasThumbnail).map((item) => item.id),
     )
+    const alive = new Set(recordings.map((recording) => recording.id))
 
     for (const [id, url] of Array.from(activeThumbnailUrls.entries())) {
-      if (wanted.has(id)) continue
+      const recording = recordings.find((item) => item.id === id)
+      if (alive.has(id) && recording?.thumbnail) continue
       revokeDiagnosticUrl(url)
       activeThumbnailUrls.delete(id)
       const next = { ...thumbnailUrls }
@@ -131,10 +188,12 @@
 
     for (const item of target) {
       if (!item.hasThumbnail || activeThumbnailUrls.has(item.id)) continue
+      if (!wanted.has(item.id)) continue
       try {
         const file = await onGetThumbnail(item.id)
         if (isCancelled()) return
         if (!file) continue
+        if (activeThumbnailUrls.has(item.id)) continue
         const url = createDiagnosticUrl(file, 'thumbnailUrl')
         activeThumbnailUrls.set(item.id, url)
         thumbnailUrls = { ...thumbnailUrls, [item.id]: url }
@@ -149,6 +208,7 @@
   }
 
   function statusLabel(recording: RecordingMetadata): string {
+    if (recording.status === 'recording') return 'En curso'
     if (recording.status === 'interrupted') return 'Interrumpida'
     if (recording.status === 'recovered') return 'Recuperada'
     if (recording.status === 'error') return 'Con errores'
@@ -314,11 +374,12 @@
         </button>
       </div>
     {:else}
-      <div class="recordings-grid">
+      <div class="recordings-grid" bind:this={gridEl}>
         {#each filteredRecordings as recording (recording.id)}
           <button
             type="button"
             class="recording-card"
+            data-id={recording.id}
             aria-label={`Abrir ${recording.title}`}
             onclick={() => (selected = recording)}
           >
@@ -365,6 +426,11 @@
             <div class="card-content">
               <div class="card-title-row">
                 <h3>{recording.title}</h3>
+                {#if recording.editedFrom}
+                  <span class="edited-mark" title="Editada" aria-label="Editada">
+                    <Scissors size={11} strokeWidth={2} />
+                  </span>
+                {/if}
                 {#if recording.hasAudio}
                   <Volume2
                     size={13}
@@ -400,6 +466,10 @@
     {onGetFile}
     onDelete={handleDelete}
     onRename={handleRename}
+    onEdit={(recording) => {
+      selected = null
+      onEdit(recording)
+    }}
     {onNotify}
   />
 {/if}
@@ -708,6 +778,18 @@
   :global(.card-audio) {
     flex: 0 0 auto;
     color: var(--text-tertiary);
+  }
+
+  .edited-mark {
+    display: grid;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    place-items: center;
+    color: var(--primary-ink);
+    background: var(--primary-soft);
+    border: 1px solid var(--primary-border);
+    border-radius: 4px;
   }
 
   .card-meta {

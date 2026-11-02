@@ -1,6 +1,4 @@
 import {
-  getFirstEncodableAudioCodec,
-  getFirstEncodableVideoCodec,
   MediaStreamAudioTrackSource,
   MediaStreamVideoTrackSource,
   Mp4OutputFormat,
@@ -17,6 +15,7 @@ import type {
   RecordingMetadata,
   RecordingPreferences,
 } from '../types'
+import { chooseAudioCodec, chooseVideoCodec } from '../media/codecs'
 import { OpfsStreamWriter } from '../storage/opfs-stream-writer'
 import { holdRecordingLock } from '../storage/recording-lock'
 import type { RecordingStore } from '../storage/recording-store'
@@ -287,13 +286,12 @@ export class RecordingController {
             })
           : new WebMOutputFormat()
 
-      const videoCodec = await this.#chooseVideoCodec(
-        container,
-        dimensions.width,
-        dimensions.height,
-        preferences.fps,
-        videoBitrate,
-      )
+      const videoCodec = await chooseVideoCodec(container, {
+        width: dimensions.width,
+        height: dimensions.height,
+        fps: preferences.fps,
+        bitrate: videoBitrate,
+      })
       if (!videoCodec) {
         throw new Error(
           container === 'mp4'
@@ -305,11 +303,14 @@ export class RecordingController {
       let audioCodec: AudioCodec | null = null
       const audioInputTrack = mixer?.track ?? directSystemTrack
       if (audioInputTrack) {
-        audioCodec = await this.#chooseAudioCodec(
-          container,
-          preferences.audioBitrate,
-          audioInputTrack,
-        )
+        // Some capture tracks omit these settings; they are hints, not guarantees
+        // about the format of the first AudioData delivered by the browser.
+        const audioSettings = audioInputTrack.getSettings()
+        audioCodec = await chooseAudioCodec(container, {
+          numberOfChannels: audioSettings.channelCount || 2,
+          sampleRate: audioSettings.sampleRate || 48_000,
+          bitrate: preferences.audioBitrate,
+        })
         if (!audioCodec) {
           await mixer?.close()
           mixer = null
@@ -886,42 +887,6 @@ export class RecordingController {
       this.#notify(message, 'warning')
       return null
     }
-  }
-
-  async #chooseVideoCodec(
-    container: 'mp4' | 'webm',
-    width: number,
-    height: number,
-    fps: number,
-    bitrate: number,
-  ): Promise<VideoCodec | null> {
-    const candidates: VideoCodec[] =
-      container === 'mp4'
-        ? ['avc', 'av1', 'vp9', 'vp8']
-        : ['vp9', 'av1', 'vp8']
-    return getFirstEncodableVideoCodec(candidates, {
-      width,
-      height,
-      frameRate: fps,
-      quality: new Quality({ bitrate, bitrateMode: 'variable' }),
-    })
-  }
-
-  async #chooseAudioCodec(
-    container: 'mp4' | 'webm',
-    bitrate: number,
-    track: MediaStreamTrack,
-  ): Promise<AudioCodec | null> {
-    const candidates: AudioCodec[] =
-      container === 'mp4' ? ['aac', 'opus'] : ['opus']
-    // Some capture tracks omit these settings; they are hints, not guarantees
-    // about the format of the first AudioData delivered by the browser.
-    const settings = track.getSettings()
-    return getFirstEncodableAudioCodec(candidates, {
-      numberOfChannels: settings.channelCount || 2,
-      sampleRate: settings.sampleRate || 48_000,
-      quality: new Quality({ bitrate }),
-    })
   }
 
   #describeSource(

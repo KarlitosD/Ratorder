@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { AlertTriangle } from '@lucide/svelte'
   import AppHeader from './lib/components/AppHeader.svelte'
+  import EditorView from './lib/components/EditorView.svelte'
   import LibraryView from './lib/components/LibraryView.svelte'
   import RecordView from './lib/components/RecordView.svelte'
   import Toast from './lib/components/Toast.svelte'
@@ -42,6 +43,10 @@
     outputHeight: null,
   })
   let recordings = $state<RecordingMetadata[]>([])
+  let editingRecording = $state<RecordingMetadata | null>(null)
+  let editorBusy = $state(false)
+  let editorDirty = $state(false)
+  let editorCloseRequest = $state(0)
   let storage = $state<StorageSummary>({ used: 0, quota: 0 })
   let libraryLoading = $state(true)
   let libraryError = $state<string | null>(null)
@@ -184,11 +189,61 @@
 
   function navigate(nextView: AppView) {
     if (view === nextView) return
+    if (editorBusy && view === 'editor' && nextView !== 'editor') {
+      showToast(
+        'Espera a que termine la exportación o cancélala antes de salir.',
+        'warning',
+      )
+      return
+    }
+    if (view === 'editor' && nextView !== 'editor' && editorDirty) {
+      editorCloseRequest += 1
+      return
+    }
     view = nextView
+    if (nextView !== 'editor') {
+      editingRecording = null
+      editorDirty = false
+      editorBusy = false
+    }
     if (nextView === 'library') {
       void refreshLibrary()
       void updateStorageUsage()
     }
+  }
+
+  function openEditor(recording: RecordingMetadata) {
+    if (editorBusy) return
+    if (
+      ['preparing', 'recording', 'paused', 'finalizing'].includes(
+        snapshot.phase,
+      )
+    ) {
+      showToast(
+        'Detén la grabación antes de abrir el editor para no afectar la captura.',
+        'warning',
+      )
+      return
+    }
+    editorDirty = false
+    editorBusy = false
+    editorCloseRequest = 0
+    editingRecording = recording
+    view = 'editor'
+  }
+
+  function closeEditor() {
+    editingRecording = null
+    editorDirty = false
+    editorBusy = false
+    view = 'library'
+    void refreshLibrary()
+    void updateStorageUsage()
+  }
+
+  function handleEditorExported(_recording: RecordingMetadata) {
+    void refreshLibrary()
+    void updateStorageUsage()
   }
 
   async function handleSelectSource() {
@@ -279,7 +334,21 @@
         onToggleMute={() => recorder.setMicrophoneMuted(!snapshot.microphoneMuted)}
         onReset={handleNewRecording}
         onOpenLibrary={() => navigate('library')}
+        onEdit={openEditor}
       />
+    {:else if view === 'editor' && editingRecording}
+      {#key editingRecording.id}
+        <EditorView
+          recording={editingRecording}
+          {store}
+          closeRequest={editorCloseRequest}
+          onClose={closeEditor}
+          onExported={handleEditorExported}
+          onNotify={showToast}
+          onBusyChange={(busy) => (editorBusy = busy)}
+          onDirtyChange={(dirty) => (editorDirty = dirty)}
+        />
+      {/key}
     {:else}
       <LibraryView
         {recordings}
@@ -290,7 +359,8 @@
         onGetThumbnail={(recordingId) => store.getThumbnailFile(recordingId)}
         onDelete={handleDelete}
         onRename={handleRename}
-        onNewRecording={() => navigate('record')}
+        onNewRecording={handleNewRecording}
+        onEdit={openEditor}
         onNotify={showToast}
       />
     {/if}

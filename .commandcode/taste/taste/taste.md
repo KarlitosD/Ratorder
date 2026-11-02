@@ -1,0 +1,7 @@
+# Taste
+- Wants destructive actions to follow the project's existing restrained style (soft/ghost danger treatment), not a solid/harsh red that stands out from the rest of the UI. Confidence: 0.6
+- Prefers explicit saving with a confirmation step over autosave: edits must stay uncommitted until the user actively saves, and there should be a way to discard changes or reset back to the original state after a mistake. Confidence: 0.85
+- Rejects trial-and-error patching: expects the real root cause to be diagnosed before changing code, and dislikes speculative/cosmetic fixes that don't address the actual bug; once a fix works, wants the diff trimmed to only the changes that matter, with leftover guesses reverted. Confidence: 0.8
+- Dislikes duplicated controls: an action should live in one place (main toolbar / context menu), not repeated as extra buttons inside panels such as the inspector; asks to remove the redundant ones. Confidence: 0.7
+- Expects desktop-app-style interactions in web UIs: real keyboard shortcuts (Ctrl/Cmd+Z undo, and other common bindings), a custom in-app right-click context menu instead of the browser-native one, and controls placed adjacent to what they act on (e.g. actions immediately above the timeline). Confidence: 0.7
+- Wants inspection/scrubbing aids (e.g. slow preview speeds like 0.25×/0.5×) to be preview-only tools that never change the project or the exported result. Confidence: 0.6

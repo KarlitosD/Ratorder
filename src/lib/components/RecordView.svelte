@@ -11,6 +11,7 @@
     Pause,
     Play,
     RotateCcw,
+    Scissors,
     ShieldCheck,
     Square,
   } from '@lucide/svelte'
@@ -18,6 +19,7 @@
     CaptureSourceInfo,
     RecorderPhase,
     RecorderSnapshot,
+    RecordingMetadata,
     RecordingPreferences,
   } from '../types'
   import { formatBytes, formatDuration, formatResolution } from '../utils/format'
@@ -34,6 +36,7 @@
     onToggleMute: () => void
     onReset: () => void
     onOpenLibrary: () => void
+    onEdit: (recording: RecordingMetadata) => void
   }
 
   let {
@@ -47,6 +50,7 @@
     onToggleMute,
     onReset,
     onOpenLibrary,
+    onEdit,
   }: Props = $props()
 
   let previewHidden = $state(false)
@@ -236,7 +240,7 @@
           </div>
           <div class="completed-copy">
             <h2>Grabación guardada</h2>
-            <p>Ya está a salvo en tu biblioteca local.</p>
+            <p>Ya está en tu biblioteca local. Puedes editarla antes de exportar.</p>
             <div class="completed-meta">
               <span>{formatDuration(snapshot.completedRecording.durationMs)}</span>
               <span class="meta-separator"></span>
@@ -414,11 +418,21 @@
         <span class="preparing-note">Un momento</span>
       {:else if phase === 'completed'}
         <div class="footer-actions actions-right">
-          <button type="button" class="btn btn-primary" onclick={onOpenLibrary}>
+          <button
+            type="button"
+            class="btn btn-primary"
+            onclick={() => {
+              if (snapshot.completedRecording) onEdit(snapshot.completedRecording)
+            }}
+          >
+            <Scissors size={16} strokeWidth={1.9} />
+            Editar video
+          </button>
+          <button type="button" class="btn btn-secondary" onclick={onOpenLibrary}>
             <FolderOpen size={16} strokeWidth={1.9} />
             Abrir biblioteca
           </button>
-          <button type="button" class="btn btn-secondary" onclick={onReset}>
+          <button type="button" class="btn btn-ghost" onclick={onReset}>
             Nueva grabación
           </button>
         </div>
@@ -908,6 +922,8 @@
     align-items: center;
     gap: 8px;
     flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .actions-right {

@@ -1,9 +1,14 @@
+import type { EditorProject } from '../editor/types'
 import type { RecordingMetadata } from '../types'
 import { isRecordingActive } from './recording-lock'
 
 const ROOT_DIRECTORY = 'recordings'
 const METADATA_FILE = 'metadata.json'
 const THUMBNAIL_FILE = 'thumbnail.webp'
+const EDIT_DIRECTORY = 'edit'
+const EDIT_PROJECT_FILE = 'project.json'
+const EDIT_ASSETS_DIRECTORY = 'assets'
+const EDIT_ASSET_NAME = /^[a-z0-9-]+\.[a-z0-9]+$/i
 
 function isDirectoryHandle(
   handle: FileSystemHandle,
@@ -42,6 +47,7 @@ function booleanOr(value: unknown, fallback: boolean): boolean {
 export class RecordingStore {
   #root: Promise<FileSystemDirectoryHandle> | null = null
   #metadataQueues = new Map<string, Promise<void>>()
+  #editorQueues = new Map<string, Promise<void>>()
 
   async initialize(): Promise<RecordingMetadata[]> {
     await this.#getRecordingsDirectory()
@@ -142,6 +148,141 @@ export class RecordingStore {
     await directory.removeEntry(recordingId, { recursive: true })
   }
 
+  async getEditorProject(recordingId: string): Promise<unknown | null> {
+    const directory = await this.#getRecordingsDirectory()
+    try {
+      const folder = await directory.getDirectoryHandle(recordingId)
+      const edit = await folder.getDirectoryHandle(EDIT_DIRECTORY)
+      const fileHandle = await edit.getFileHandle(EDIT_PROJECT_FILE)
+      const file = await fileHandle.getFile()
+      return JSON.parse(await file.text()) as unknown
+    } catch (error) {
+      if (fileExistsMessage(error)) return null
+      console.warn(`No se pudo leer el proyecto de edición de ${recordingId}.`, error)
+      return null
+    }
+  }
+
+  async saveEditorProject(
+    recordingId: string,
+    project: EditorProject,
+  ): Promise<void> {
+    const previous = this.#editorQueues.get(recordingId) ?? Promise.resolve()
+    const write = previous
+      .catch(() => undefined)
+      .then(() => this.#writeEditorProject(recordingId, project))
+    this.#editorQueues.set(recordingId, write)
+
+    try {
+      await write
+    } finally {
+      if (this.#editorQueues.get(recordingId) === write) {
+        this.#editorQueues.delete(recordingId)
+      }
+    }
+  }
+
+  async saveEditorAsset(
+    recordingId: string,
+    storedName: string,
+    blob: Blob,
+  ): Promise<void> {
+    if (!EDIT_ASSET_NAME.test(storedName)) {
+      throw new Error('El nombre del medio importado no es válido.')
+    }
+    const assets = await this.#getEditorAssetsDirectory(recordingId)
+    const fileHandle = await assets.getFileHandle(storedName, { create: true })
+    const writable = await fileHandle.createWritable()
+    try {
+      await writable.write(blob)
+      await writable.close()
+    } catch (error) {
+      await writable.abort().catch(() => undefined)
+      throw error
+    }
+  }
+
+  async getEditorAssetFile(
+    recordingId: string,
+    storedName: string,
+  ): Promise<File> {
+    if (!EDIT_ASSET_NAME.test(storedName)) {
+      throw new Error('El nombre del medio importado no es válido.')
+    }
+    const assets = await this.#getEditorAssetsDirectory(recordingId)
+    const fileHandle = await assets.getFileHandle(storedName)
+    return fileHandle.getFile()
+  }
+
+  async deleteEditorAsset(
+    recordingId: string,
+    storedName: string,
+  ): Promise<void> {
+    if (!EDIT_ASSET_NAME.test(storedName)) {
+      throw new Error('El nombre del medio importado no es válido.')
+    }
+    try {
+      const assets = await this.#getEditorAssetsDirectory(recordingId)
+      await assets.removeEntry(storedName)
+    } catch (error) {
+      if (!fileExistsMessage(error)) throw error
+    }
+  }
+
+  async getWaveformBytes(
+    recordingId: string,
+    fileName: string,
+  ): Promise<Uint8Array | null> {
+    if (!/^[a-zA-Z0-9_-]+\.bin$/.test(fileName)) return null
+    try {
+      const directory = await this.#getWaveformsDirectory(recordingId, false)
+      if (!directory) return null
+      const handle = await directory.getFileHandle(fileName)
+      const file = await handle.getFile()
+      return new Uint8Array(await file.arrayBuffer())
+    } catch (error) {
+      if (fileExistsMessage(error)) return null
+      throw error
+    }
+  }
+
+  async saveWaveformBytes(
+    recordingId: string,
+    fileName: string,
+    data: Uint8Array,
+  ): Promise<void> {
+    if (!/^[a-zA-Z0-9_-]+\.bin$/.test(fileName)) {
+      throw new Error('El nombre de la caché no es válido.')
+    }
+    const directory = await this.#getWaveformsDirectory(recordingId, true)
+    if (!directory) {
+      throw new Error('No se pudo abrir la caché de formas de onda.')
+    }
+    const handle = await directory.getFileHandle(fileName, { create: true })
+    const writable = await handle.createWritable()
+    try {
+      await writable.write(data as unknown as ArrayBuffer)
+      await writable.close()
+    } catch (error) {
+      await writable.abort().catch(() => undefined)
+      throw error
+    }
+  }
+
+  async deleteWaveform(
+    recordingId: string,
+    fileName: string,
+  ): Promise<void> {
+    if (!/^[a-zA-Z0-9_-]+\.bin$/.test(fileName)) return
+    try {
+      const directory = await this.#getWaveformsDirectory(recordingId, false)
+      if (!directory) return
+      await directory.removeEntry(fileName)
+    } catch (error) {
+      if (!fileExistsMessage(error)) throw error
+    }
+  }
+
   async #getRecordingsDirectory(): Promise<FileSystemDirectoryHandle> {
     if (!this.#root) {
       this.#root = (async () => {
@@ -155,6 +296,55 @@ export class RecordingStore {
       })()
     }
     return this.#root
+  }
+
+  async #getEditorAssetsDirectory(
+    recordingId: string,
+  ): Promise<FileSystemDirectoryHandle> {
+    const directory = await this.#getRecordingsDirectory()
+    const folder = await directory.getDirectoryHandle(recordingId, {
+      create: true,
+    })
+    const edit = await folder.getDirectoryHandle(EDIT_DIRECTORY, {
+      create: true,
+    })
+    return edit.getDirectoryHandle(EDIT_ASSETS_DIRECTORY, { create: true })
+  }
+
+  async #getWaveformsDirectory(
+    recordingId: string,
+    create: boolean,
+  ): Promise<FileSystemDirectoryHandle | null> {
+    try {
+      const directory = await this.#getRecordingsDirectory()
+      const folder = await directory.getDirectoryHandle(recordingId, {
+        create,
+      })
+      const edit = await folder.getDirectoryHandle(EDIT_DIRECTORY, {
+        create,
+      })
+      return await edit.getDirectoryHandle('waveforms', { create })
+    } catch (error) {
+      if (!create && fileExistsMessage(error)) return null
+      throw error
+    }
+  }
+
+  async #writeEditorProject(
+    recordingId: string,
+    project: EditorProject,
+  ): Promise<void> {
+    const directory = await this.#getRecordingsDirectory()
+    const folder = await directory.getDirectoryHandle(recordingId, {
+      create: true,
+    })
+    const edit = await folder.getDirectoryHandle(EDIT_DIRECTORY, {
+      create: true,
+    })
+    const fileHandle = await edit.getFileHandle(EDIT_PROJECT_FILE, {
+      create: true,
+    })
+    await this.#writeJson(fileHandle, project)
   }
 
   async #readRecording(
@@ -273,6 +463,8 @@ export class RecordingStore {
         thumbnail:
           typeof value.thumbnail === 'string' ? value.thumbnail : null,
         note: typeof value.note === 'string' ? value.note : undefined,
+        editedFrom:
+          typeof value.editedFrom === 'string' ? value.editedFrom : null,
       }
     } catch {
       return null
@@ -310,6 +502,7 @@ export class RecordingStore {
       sourceLabel: 'Captura de pantalla',
       thumbnail: hasThumbnail ? THUMBNAIL_FILE : null,
       note: 'No se encontró el archivo de metadata. La grabación se puede exportar, pero puede estar incompleta.',
+      editedFrom: null,
     }
   }
 
@@ -347,7 +540,7 @@ export class RecordingStore {
 
   async #writeJson(
     fileHandle: FileSystemFileHandle,
-    value: RecordingMetadata,
+    value: unknown,
   ): Promise<void> {
     const writable = await fileHandle.createWritable()
     try {

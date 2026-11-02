@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "types": ["svelte", "vite/client", "node", "vitest/globals"],
+    "noEmit": true,
+    "noImplicitAny": false,
+    "strict": false,
+    "allowJs": true,
+    "checkJs": false,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["tests/**/*.ts", "vitest.config.ts"]
+}

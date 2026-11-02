@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { after, before, test } from 'node:test'
+import { afterAll, beforeAll, test } from 'vitest'
 import puppeteer from 'puppeteer-core'
 import { createServer } from 'vite'
 
-let server, browser, origin
-before(async () => {
+let server: any, browser: any, origin: any
+beforeAll(async () => {
   const executablePath = process.env.CHROMIUM_PATH ?? ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome'].find(existsSync)
   assert.ok(executablePath, 'Install Chromium or set CHROMIUM_PATH')
   server = await createServer({ server: { host: '127.0.0.1', port: 0 } })
@@ -13,15 +13,16 @@ before(async () => {
   origin = server.resolvedUrls.local[0]
   browser = await puppeteer.launch({ executablePath, headless: true, args: ['--no-sandbox'] })
 })
-after(async () => { await browser?.close(); await server?.close() })
+afterAll(async () => { await browser?.close(); await server?.close() })
 
 test('does not retain thumbnail URLs when the library closes during loading', async () => {
   const page = await browser.newPage()
   try {
     await page.goto(origin)
     const result = await page.evaluate(async () => {
-      const { mount, unmount, tick } = await import('/node_modules/.vite/deps/svelte.js')
-      const { default: LibraryView } = await import('/src/lib/components/LibraryView.svelte')
+    const load = (p: any) => (0, eval)(`import(${JSON.stringify(p)})`); 
+      const { mount, unmount, tick } = await load('/node_modules/.vite/deps/svelte.js')
+      const { default: LibraryView } = await load('/src/lib/components/LibraryView.svelte')
       let resolveThumbnail
       const pending = new Promise(resolve => { resolveThumbnail = resolve })
       let created = 0
@@ -46,14 +47,16 @@ test('terminates the writer worker when opening fails', async () => {
   try {
     await page.goto(origin)
     const terminated = await page.evaluate(async () => {
+    const load = (p: any) => (0, eval)(`import(${JSON.stringify(p)})`); 
       let terminated = false
-      window.Worker = class {
-        listeners = {}
-        addEventListener(type, callback) { this.listeners[type] = callback }
-        postMessage(message) { queueMicrotask(() => this.listeners.message({ data: { id: message.id, ok: false, error: 'open failed' } })) }
+      const FakeWorker = class {
+        listeners: any = {}
+        addEventListener(type: any, callback: any) { this.listeners[type] = callback }
+        postMessage(message: any) { queueMicrotask(() => this.listeners.message({ data: { id: message.id, ok: false, error: 'open failed' } })) }
         terminate() { terminated = true }
       }
-      const { OpfsStreamWriter } = await import('/src/lib/storage/opfs-stream-writer.ts')
+      ;(window as any).Worker = FakeWorker as any
+      const { OpfsStreamWriter } = await load('/src/lib/storage/opfs-stream-writer.ts')
       await OpfsStreamWriter.open('test', 'webm').catch(() => {})
       return terminated
     })
@@ -66,9 +69,10 @@ test('releases thumbnail URLs after repeatedly opening and closing the library',
   try {
     await page.goto(origin)
     const result = await page.evaluate(async () => {
-      const { mount, unmount, tick } = await import('/node_modules/.vite/deps/svelte.js')
-      const { default: LibraryView } = await import('/src/lib/components/LibraryView.svelte')
-      const { getResourceCounts } = await import('/src/lib/diagnostics/resources.ts')
+    const load = (p: any) => (0, eval)(`import(${JSON.stringify(p)})`); 
+      const { mount, unmount, tick } = await load('/node_modules/.vite/deps/svelte.js')
+      const { default: LibraryView } = await load('/src/lib/components/LibraryView.svelte')
+      const { getResourceCounts } = await load('/src/lib/diagnostics/resources.ts')
       const baseline = getResourceCounts().thumbnailUrl
       for (let i = 0; i < 20; i++) {
         const component = mount(LibraryView, { target: document.createElement('div'), props: {
@@ -93,8 +97,12 @@ test('keeps diagnostics inside advanced recording settings', async () => {
     await page.locator('button::-p-text(Opciones avanzadas)').click()
     const summary = await page.$('summary::-p-text(Diagnóstico)')
     assert.ok(summary)
+    await page.waitForFunction(() => {
+      const details = document.querySelector('details.diagnostics-disclosure')
+      return Boolean(details && details.getBoundingClientRect().height > 0)
+    })
     assert.equal(await page.$eval('details.diagnostics-disclosure', el => el.open), false)
-    await summary.click()
+    await summary.evaluate(el => el.click())
     assert.equal(await page.$eval('details.diagnostics-disclosure', el => el.open), true)
     assert.ok(await page.$('button::-p-text(Ver informe local)'))
   } finally { await page.close() }

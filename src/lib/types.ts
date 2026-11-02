@@ -1,4 +1,4 @@
-export type AppView = 'record' | 'library'
+export type AppView = 'record' | 'library' | 'editor'
 
 export type ContainerFormat = 'mp4' | 'webm'
 
@@ -45,6 +45,7 @@ export interface RecordingMetadata {
   sourceLabel: string
   thumbnail: string | null
   note?: string
+  editedFrom?: string | null
 }
 
 export interface CaptureSourceInfo {

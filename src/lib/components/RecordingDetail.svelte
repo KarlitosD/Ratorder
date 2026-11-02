@@ -11,6 +11,7 @@
     Loader,
     Pencil,
     Play,
+    Scissors,
     ShieldCheck,
     Trash2,
     Volume2,
@@ -36,6 +37,7 @@
       recording: RecordingMetadata,
       title: string,
     ) => Promise<RecordingMetadata>
+    onEdit: (recording: RecordingMetadata) => void
     onNotify: (message: string, kind: ToastKind) => void
   }
 
@@ -46,6 +48,7 @@
     onGetFile,
     onDelete,
     onRename,
+    onEdit,
     onNotify,
   }: Props = $props()
 
@@ -364,7 +367,7 @@
     <header class="modal-header">
       <div class="modal-title-block">
         <span class="modal-kicker">
-          {formatDescription} · {formatResolution(currentRecording.width, currentRecording.height)}
+          {formatDescription} · {formatResolution(currentRecording.width, currentRecording.height)}{currentRecording.editedFrom ? ' · Editada' : ''}
         </span>
         <h2 id="recording-modal-title">{currentRecording.title}</h2>
       </div>
@@ -500,7 +503,7 @@
               </button>
               <button
                 type="button"
-                class="btn btn-danger btn-sm"
+                class="btn btn-danger-ghost btn-sm"
                 disabled={deleting}
                 onclick={deleteRecording}
               >
@@ -573,7 +576,7 @@
         </button>
         <button
           type="button"
-          class="btn btn-primary action-button"
+          class="btn btn-secondary action-button"
           disabled={exporting || deleting}
           onclick={exportRecording}
         >
@@ -584,6 +587,15 @@
             <Download size={15} strokeWidth={1.9} />
             Exportar
           {/if}
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary action-button"
+          disabled={exporting || deleting}
+          onclick={() => onEdit(currentRecording)}
+        >
+          <Scissors size={15} strokeWidth={1.9} />
+          Editar
         </button>
       </div>
     </footer>

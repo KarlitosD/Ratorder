@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { after, before, test } from 'node:test'
+import { afterAll, beforeAll, test } from 'vitest'
 import puppeteer from 'puppeteer-core'
 import { createServer } from 'vite'
 
@@ -10,11 +10,11 @@ import { createServer } from 'vite'
 const toneFrequency = 1000
 const recordingDurationMs = 3000
 const decodedSampleRate = 48000
-let server
-let browser
-let origin
+let server: any
+let browser: any
+let origin: any
 
-before(async () => {
+beforeAll(async () => {
   const executablePath = process.env.CHROMIUM_PATH ?? [
     '/usr/bin/chromium',
     '/usr/bin/chromium-browser',
@@ -37,57 +37,23 @@ before(async () => {
   })
 })
 
-after(async () => {
+afterAll(async () => {
   await browser?.close()
   await server?.close()
 })
 
 async function recordTone(container, trackSettings = null, expectedFormat = null) {
   const page = await browser.newPage()
-  const errors = []
+  const errors: any[] = []
   page.on('pageerror', (error) => errors.push(error.message))
 
   try {
     await page.goto(origin, { waitUntil: 'networkidle0' })
     const result = await page.evaluate(async (options) => {
-      const { RecordingController } = await import('/src/lib/recording/recording-controller.ts')
-      const { RecordingStore } = await import('/src/lib/storage/recording-store.ts')
-      const { DEFAULT_PREFERENCES } = await import('/src/lib/recording/config.ts')
-
-      // Replay bounded timestamp jitter at the browser API boundary instead of
-      // depending on host scheduling. PCM stays continuous, but resampling it by
-      // these timestamps creates gaps/overlaps even at an unchanged sample rate.
-      const NativeProcessor = window.MediaStreamTrackProcessor
-      window.MediaStreamTrackProcessor = class {
-        constructor(options) {
-          const processor = new NativeProcessor(options)
-          if (options.track.kind !== 'audio') return processor
-          let firstTimestamp
-          let framesSeen = 0
-          let blockIndex = 0
-          const jitter = [0, -250, -500, -750, -500, -250]
-          this.readable = processor.readable.pipeThrough(new TransformStream({
-            transform(data, controller) {
-              firstTimestamp ??= data.timestamp
-              const { numberOfFrames, numberOfChannels, sampleRate } = data
-              const pcm = new Float32Array(numberOfFrames * numberOfChannels)
-              for (let channel = 0; channel < numberOfChannels; channel++) {
-                const plane = pcm.subarray(channel * numberOfFrames, (channel + 1) * numberOfFrames)
-                data.copyTo(plane, { planeIndex: channel, format: 'f32-planar' })
-              }
-              const timestamp = firstTimestamp + Math.round(framesSeen / sampleRate * 1e6)
-                + jitter[blockIndex++ % jitter.length]
-              const sample = new AudioData({
-                format: 'f32-planar', data: pcm, timestamp,
-                numberOfFrames, numberOfChannels, sampleRate,
-              })
-              framesSeen += numberOfFrames
-              data.close()
-              controller.enqueue(sample)
-            },
-          }))
-        }
-      }
+    const load = (p: any) => (0, eval)(`import(${JSON.stringify(p)})`); 
+      const { RecordingController } = await load('/src/lib/recording/recording-controller.ts')
+      const { RecordingStore } = await load('/src/lib/storage/recording-store.ts')
+      const { DEFAULT_PREFERENCES } = await load('/src/lib/recording/config.ts')
 
       const context = new AudioContext({ sampleRate: 48000 })
       const canvas = document.createElement('canvas')
@@ -178,8 +144,9 @@ test('requests unprocessed display audio so tab sound is not downmixed', { timeo
   try {
     await page.goto(origin, { waitUntil: 'networkidle0' })
     const audio = await page.evaluate(async () => {
-      const { RecordingController } = await import('/src/lib/recording/recording-controller.ts')
-      const { DEFAULT_PREFERENCES } = await import('/src/lib/recording/config.ts')
+    const load = (p: any) => (0, eval)(`import(${JSON.stringify(p)})`); 
+      const { RecordingController } = await load('/src/lib/recording/recording-controller.ts')
+      const { DEFAULT_PREFERENCES } = await load('/src/lib/recording/config.ts')
 
       let requestedAudio = null
       navigator.mediaDevices.getDisplayMedia = async (options) => {
